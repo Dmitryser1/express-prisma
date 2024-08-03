@@ -1,124 +1,31 @@
-import httpStatus from 'http-status';
-import tokenService from './token.service';
-import userService from './user.service';
-import ApiError from '../utils/ApiError';
-import { TokenType, User } from '@prisma/client';
-import prisma from '../client';
-import { encryptPassword, isPasswordMatch } from '../utils/encryption';
-import { AuthTokensResponse } from '../types/response';
-import exclude from '../utils/exclude';
+import { PrismaClient, User } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
-/**
- * Login with username and password
- * @param {string} email
- * @param {string} password
- * @returns {Promise<Omit<User, 'password'>>}
- */
-const loginUserWithEmailAndPassword = async (
-  email: string,
-  password: string
-): Promise<Omit<User, 'password'>> => {
-  const user = await userService.getUserByEmail(email, [
-    'id',
-    'email',
-    'name',
-    'password',
-    'role',
-    'isEmailVerified',
-    'createdAt',
-    'updatedAt'
-  ]);
-  if (!user || !(await isPasswordMatch(password, user.password as string))) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'Incorrect email or password');
-  }
-  return exclude(user, ['password']);
-};
+const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-/**
- * Logout
- * @param {string} refreshToken
- * @returns {Promise<void>}
- */
-const logout = async (refreshToken: string): Promise<void> => {
-  const refreshTokenData = await prisma.token.findFirst({
-    where: {
-      token: refreshToken,
-      type: TokenType.REFRESH,
-      blacklisted: false
-    }
-  });
-  if (!refreshTokenData) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Not found');
-  }
-  await prisma.token.delete({ where: { id: refreshTokenData.id } });
-};
-
-/**
- * Refresh auth tokens
- * @param {string} refreshToken
- * @returns {Promise<AuthTokensResponse>}
- */
-const refreshAuth = async (refreshToken: string): Promise<AuthTokensResponse> => {
-  try {
-    const refreshTokenData = await tokenService.verifyToken(refreshToken, TokenType.REFRESH);
-    const { userId } = refreshTokenData;
-    await prisma.token.delete({ where: { id: refreshTokenData.id } });
-    return tokenService.generateAuthTokens({ id: userId });
-  } catch (error) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'Please authenticate');
-  }
-};
-
-/**
- * Reset password
- * @param {string} resetPasswordToken
- * @param {string} newPassword
- * @returns {Promise<void>}
- */
-const resetPassword = async (resetPasswordToken: string, newPassword: string): Promise<void> => {
-  try {
-    const resetPasswordTokenData = await tokenService.verifyToken(
-      resetPasswordToken,
-      TokenType.RESET_PASSWORD
-    );
-    const user = await userService.getUserById(resetPasswordTokenData.userId);
-    if (!user) {
-      throw new Error();
-    }
-    const encryptedPassword = await encryptPassword(newPassword);
-    await userService.updateUserById(user.id, { password: encryptedPassword });
-    await prisma.token.deleteMany({ where: { userId: user.id, type: TokenType.RESET_PASSWORD } });
-  } catch (error) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'Password reset failed');
-  }
-};
-
-/**
- * Verify email
- * @param {string} verifyEmailToken
- * @returns {Promise<void>}
- */
-const verifyEmail = async (verifyEmailToken: string): Promise<void> => {
-  try {
-    const verifyEmailTokenData = await tokenService.verifyToken(
-      verifyEmailToken,
-      TokenType.VERIFY_EMAIL
-    );
-    await prisma.token.deleteMany({
-      where: { userId: verifyEmailTokenData.userId, type: TokenType.VERIFY_EMAIL }
+export class AuthService {
+  async register(data: { username: string, password: string, email: string }): Promise<User> {
+    const hashedPassword = await bcrypt.hash(data.password, 10);
+    return await prisma.user.create({
+      data: {
+        username: data.username,
+        password: hashedPassword,
+        email: data.email
+      }
     });
-    await userService.updateUserById(verifyEmailTokenData.userId, { isEmailVerified: true });
-  } catch (error) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, 'Email verification failed');
   }
-};
 
-export default {
-  loginUserWithEmailAndPassword,
-  isPasswordMatch,
-  encryptPassword,
-  logout,
-  refreshAuth,
-  resetPassword,
-  verifyEmail
-};
+  async login(data: { username: string, password: string }): Promise<string> {
+    const user = await prisma.user.findUnique({ where: { username: data.username } });
+    if (!user || !await bcrypt.compare(data.password, user.password)) {
+      throw new Error('Invalid username or password');
+    }
+    return jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET);
+  }
+
+  async getCurrentUser(userId: number): Promise<User | null> {
+    return await prisma.user.findUnique({ where: { id: userId } });
+  }
+}

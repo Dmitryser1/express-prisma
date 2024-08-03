@@ -1,64 +1,33 @@
-import httpStatus from 'http-status';
-import catchAsync from '../utils/catchAsync';
-import { authService, userService, tokenService, emailService } from '../services';
-import exclude from '../utils/exclude';
-import { User } from '@prisma/client';
+import { Request, Response } from 'express';
+import { AuthService } from '../services/auth.service';
 
-const register = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await userService.createUser(email, password);
-  const userWithoutPassword = exclude(user, ['password', 'createdAt', 'updatedAt']);
-  const tokens = await tokenService.generateAuthTokens(user);
-  res.status(httpStatus.CREATED).send({ user: userWithoutPassword, tokens });
-});
+const authService = new AuthService();
 
-const login = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await authService.loginUserWithEmailAndPassword(email, password);
-  const tokens = await tokenService.generateAuthTokens(user);
-  res.send({ user, tokens });
-});
+export class AuthController {
+  async register(req: Request, res: Response) {
+    try {
+      const user = await authService.register(req.body);
+      res.json(user);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  }
 
-const logout = catchAsync(async (req, res) => {
-  await authService.logout(req.body.refreshToken);
-  res.status(httpStatus.NO_CONTENT).send();
-});
+  async login(req: Request, res: Response) {
+    try {
+      const token = await authService.login(req.body);
+      res.json({ token });
+    } catch (error) {
+      res.status(401).json({ error: (error as Error).message });
+    }
+  }
 
-const refreshTokens = catchAsync(async (req, res) => {
-  const tokens = await authService.refreshAuth(req.body.refreshToken);
-  res.send({ ...tokens });
-});
-
-const forgotPassword = catchAsync(async (req, res) => {
-  const resetPasswordToken = await tokenService.generateResetPasswordToken(req.body.email);
-  await emailService.sendResetPasswordEmail(req.body.email, resetPasswordToken);
-  res.status(httpStatus.NO_CONTENT).send();
-});
-
-const resetPassword = catchAsync(async (req, res) => {
-  await authService.resetPassword(req.query.token as string, req.body.password);
-  res.status(httpStatus.NO_CONTENT).send();
-});
-
-const sendVerificationEmail = catchAsync(async (req, res) => {
-  const user = req.user as User;
-  const verifyEmailToken = await tokenService.generateVerifyEmailToken(user);
-  await emailService.sendVerificationEmail(user.email, verifyEmailToken);
-  res.status(httpStatus.NO_CONTENT).send();
-});
-
-const verifyEmail = catchAsync(async (req, res) => {
-  await authService.verifyEmail(req.query.token as string);
-  res.status(httpStatus.NO_CONTENT).send();
-});
-
-export default {
-  register,
-  login,
-  logout,
-  refreshTokens,
-  forgotPassword,
-  resetPassword,
-  sendVerificationEmail,
-  verifyEmail
-};
+  async me(req: Request, res: Response) {
+    try {
+      const user = await authService.getCurrentUser(req.userId as number);
+      res.json(user);
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  }
+}
