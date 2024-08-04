@@ -9,7 +9,7 @@ export class UsersController {
       const user = await userService.updateUserRole(parseInt(req.params.id), req.body.role);
       res.json(user);
     } catch (error) {
-      res.status(400).json({ error: error.message });
+      res.status(400).json({ error: (error as Error).message });
     }
   }
 }

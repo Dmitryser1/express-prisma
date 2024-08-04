@@ -1,8 +1,10 @@
-import { Request } from 'express';
+import express from 'express';
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    userId?: number;
-    userRole?: number;
+declare global {
+  namespace Express {
+    export interface Request {
+      userId?: number; // Или другой тип, если `userId` не является строкой
+      userRole?: number;
+    }
   }
 }
