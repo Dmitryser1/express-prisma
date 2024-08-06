@@ -1,0 +1,34 @@
+version: '3.7'
+services:
+  pg_store_db:
+    image: postgres:16
+    container_name: pg_store
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: store_db
+      POSTGRES_USER: store_user
+      POSTGRES_PASSWORD: store_password
+    volumes:  
+      - store_data:/var/lib/postgresql/data
+    networks:
+      - pg_network
+
+  app:
+    build: .
+    container_name: nest_app
+    ports:
+      - '3000:3000'
+    depends_on:
+      - pg_store_db
+    environment:
+      DATABASE_URL: "postgresql://store_user:store_password@pg_store:5432/store_db"
+    networks:
+      - pg_network
+
+volumes:
+  store_data:
+
+networks:
+  pg_network:
+    driver: bridge
