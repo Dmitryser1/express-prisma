@@ -3,12 +3,12 @@ import { PrismaClient, Book } from '@prisma/client';
 const prisma = new PrismaClient();
 
 export class BookService {
-  async addBook(data: { title: string, author: string, publicationDate: Date, genres: string[] }): Promise<Book> {
+  async addBook(data: { title: string, author: string, genres: string[] }): Promise<Book> {
     return await prisma.book.create({
       data: {
         title: data.title,
         author: data.author,
-        publicationDate: data.publicationDate,
+        publicationDate: new Date(),
         genres: data.genres
       }
     });
